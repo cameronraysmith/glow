@@ -1,7 +1,7 @@
 setup_base: &setup_base
   working_directory: ~/glow
   docker:
-    - image: circleci/openjdk:8
+    - image: cimg/openjdk:8.0.322
   resource_class: xlarge
 
 install_conda: &install_conda
@@ -34,7 +34,7 @@ create_docs_env: &create_docs_env
       fi
 
 install_pyspark2: &install_pyspark2
-  run: # Evict PySpark 3.1.2 in favor of PySpark 2.4.5
+  run: # Evict PySpark 3.2.0 in favor of PySpark 2.4.5
     name: Install PySpark 2.4.5
     command: |
       export PATH=$HOME/conda/bin:$PATH
@@ -60,6 +60,7 @@ check_clean_repo: &check_clean_repo
 version: 2.1
 orbs:
   codecov: codecov/codecov@1.0.5
+  jq: circleci/jq@1.6.0
 jobs:
 
   check-docs:
@@ -86,7 +87,7 @@ jobs:
       - run:
           name: Configure Databricks CLI
           command: |
-            printf "[docs-ci]\nhost = https://adb-984752964297111.11.azuredatabricks.net\ntoken = ${DATABRICKS_API_TOKEN}\n" > ~/.databrickscfg
+            printf "[docs-ci]\nhost = https://adb-984752964297111.11.azuredatabricks.net\ntoken = ${DATABRICKS_API_TOKEN}\njobs-api-version = 2.1\n" > ~/.databrickscfg
       - run:
           name: Generate notebook source files
           command: |
@@ -227,7 +228,7 @@ jobs:
           environment:
           command: |
             export PATH=$HOME/conda/envs/glow/bin:$PATH
-            export SPARK_VERSION="3.1.2"
+            export SPARK_VERSION="3.2.0"
             export SCALA_VERSION="2.12.8"
             sbt core/test exit
       - run:
@@ -236,29 +237,29 @@ jobs:
           environment:
           command: |
             export PATH=$HOME/conda/envs/glow/bin:$PATH
-            export SPARK_VERSION="3.1.2"
+            export SPARK_VERSION="3.2.0"
             export SCALA_VERSION="2.12.8"
             sbt docs/test exit
+      - run:
+          name: Run Hail on Spark3 tests
+          environment:
+          command: |
+            export PATH=$HOME/conda/envs/glow/bin:$HOME/conda/bin:$PATH
+            export SPARK_VERSION="3.2.0"
+            export SCALA_VERSION="2.12.8"
+            export HAIL_VERSION="0.2.89"
+            sudo apt-get update
+            sudo apt-get -y install rsync
+            sbt installHail hail/test uninstallHail exit
       - run:
           name: Run Python tests
           no_output_timeout: 90m
           environment:
           command: |
             export PATH=$HOME/conda/envs/glow/bin:$PATH
-            export SPARK_VERSION="3.1.2"
+            export SPARK_VERSION="3.2.0"
             export SCALA_VERSION="2.12.8"
             sbt python/test exit
-      - run:
-          name: Run Hail tests
-          environment:
-          command: |
-            export PATH=$HOME/conda/envs/glow/bin:$HOME/conda/bin:$PATH
-            export SPARK_VERSION="3.1.2"
-            export SCALA_VERSION="2.12.8"
-            export HAIL_VERSION="0.2.74"
-            sudo apt-get update
-            sudo apt-get -y install rsync
-            sbt installHail hail/test uninstallHail exit
       - *check_clean_repo
       - store_artifacts:
           path: ~/glow/unit-tests.log
@@ -282,39 +283,22 @@ jobs:
       - run:
           name: Configure Databricks CLI
           command: |
-            printf "[docs-ci]\nhost = https://adb-984752964297111.11.azuredatabricks.net\ntoken = ${DATABRICKS_API_TOKEN}\n" > ~/.databrickscfg
+            printf "[docs-ci]\nhost = https://adb-984752964297111.11.azuredatabricks.net\ntoken = ${DATABRICKS_API_TOKEN}\njobs-api-version = 2.1\n" > ~/.databrickscfg
       - run:
           name: Run all notebook tests
           command: |
             export PATH=$HOME/conda/envs/glow/bin:$PATH
-            python docs/dev/run-nb-test.py --cli-profile docs-ci
-
-  changed-notebook-tests:
-    <<: *setup_base
-    steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - conda-deps-v1-{{ checksum "python/environment.yml" }}
-      - *install_conda
-      - *create_python_env
-      - save_cache:
-          paths:
-            - /home/circleci/conda
-          key: conda-deps-v1-{{ checksum "python/environment.yml" }}
-      - run:
-          name: Configure Databricks CLI
-          command: |
-            printf "[docs-ci]\nhost = https://adb-984752964297111.11.azuredatabricks.net\ntoken = ${DATABRICKS_API_TOKEN}\n" > ~/.databrickscfg
-      - run:
-          name: Run changed notebook tests
-          command: |
-            export PATH=$HOME/conda/envs/glow/bin:$PATH
-            if [[ -n $(git diff --name-status master --relative docs/source/_static/ | sed '/^D/d') ]]; then
-              echo "Testing changed notebooks! (except for deleted ones)"
-              python docs/dev/run-nb-test.py --cli-profile docs-ci $(git diff --name-status master --relative docs/source/_static/zzz_GENERATED_NOTEBOOK_SOURCE | sed '/^D/d' | awk '{print $NF}' | cut -c 51- | cut -f1 -d"." | sed -e 's/^/--nbs /')
+            if [[ ! -z $CIRCLE_PULL_REQUEST ]]; then
+              echo 'export repo_url=$(curl -s https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls/${CIRCLE_PR_NUMBER} | jq -r '.head.repo.html_url')'>> $BASH_ENV
+              echo 'export pr_branch=$(curl -s https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/pulls/${CIRCLE_PR_NUMBER} | jq -r '.head.ref')' >> $BASH_ENV
+              source $BASH_ENV
+              python docs/dev/run-nb-test.py --cli-profile docs-ci \
+                                             --repos-url $repo_url \
+                                             --branch $pr_branch \
+                                             --dockerhub_password ${PROJECTGLOW_DOCKERHUB_PASSWORD}
             else
-              echo "No notebooks changed."
+              python docs/dev/run-nb-test.py --cli-profile docs-ci \
+                                             --dockerhub_password ${PROJECTGLOW_DOCKERHUB_PASSWORD}
             fi
 
 workflows:
@@ -325,7 +309,7 @@ workflows:
       - scala-2_11-tests
       - scala-2_12-tests
       - spark-3-tests
-      - changed-notebook-tests
+      - all-notebook-tests
   nightly:
     triggers:
       - schedule:

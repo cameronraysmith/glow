@@ -1,23 +1,5 @@
-FROM projectglow/with-r:9.1 AS r
-
-# ===== Build off Databricks Runtime ===============================================================
-
-#The runtime base is Ubuntu 18.04, or 20.04 after 9.x
-#See more here https://github.com/databricks/containers
-
-# ===== Set up python environment ==================================================================
-
-RUN /databricks/python3/bin/pip install awscli databricks-cli --no-cache-dir
-
-# ===== Set up Azure CLI =====
-
-RUN apt-get install -y \
-    curl \
-    lsb-release \
-    gnupg \
-    tzdata
-
-RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+FROM projectglow/open-source-base:1.1.2 AS base
+USER root
 
 # ===== Set up base required libraries =============================================================
 
@@ -28,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     apt-transport-https \
     ca-certificates \
     cpanminus \
+    libncurses-dev \
     libpng-dev \
     zlib1g-dev \
     libbz2-dev \
@@ -47,8 +30,13 @@ RUN apt-get update && apt-get install -y \
     zlib1g \
     zlib1g-dev \
     libxml2 \
-    libxml2-dev 
-
+    libxml2-dev \
+    r-base \
+    r-base-dev \
+&& wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | tee -a /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc \
+&& add-apt-repository "deb [arch=amd64,i386] https://cloud.r-project.org/bin/linux/ubuntu focal-cran40/" \
+&& apt-get clean \
+&& rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ===== Set up VEP environment =====================================================================
 
@@ -127,7 +115,7 @@ RUN CXX=/usr/bin/g++ && \
 # ===== Set up MLR dependencies ====================================================================
 
 ENV QQMAN_VERSION=1.0.6
-RUN /databricks/python3/bin/pip install qqman==$QQMAN_VERSION
+RUN pip3 install qqman==$QQMAN_VERSION
 
 # ===== Set up R genomics packages =================================================================
 

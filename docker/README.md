@@ -2,54 +2,67 @@
 
 As of this time the following are supported: 
 
-* Glow 1.1.2 + Databricks Runtime (DBR) 9.1 (Spark 3.1)
+* Glow 1.1.2 + connectors to Azure Data Lake, Google Cloud Storage, Amazon Web Services (S3), Snowflake and Delta Lake (via data mechanics' Spark Image) 
+* Glow 1.1.2 + Databricks Runtime (DBR) 9.1 (Spark 3.1) + Ganglia
 * Hail 0.2.78 + DBR 9.1 (Spark 3.1)
 
-These Dockerfiles are built to run on Databricks, 
-but can be adapted to run Glow & Hail in the open source,
+The containers are hosted on the [projectglow dockerhub](https://hub.docker.com/u/projectglow), 
+Please see the Glow [Getting Started](https://glow.readthedocs.io/en/latest/getting-started.html) guide for documentation on how to use the containers.
 
-Note: Docker builds may run out of memory, please increase
-Docker's default memorry setting, which is 2.0 GB, via Preferences -> Resources -> Advanced.
+## Building the containers
+
+##### Troubleshooting
+
+If you get the following error:
+
+```
+failed to solve with frontend dockerfile.v0: failed to create LLB definition: docker.io/projectglow/minimal:9.1: not found
+```
+
+please run this from the shell and try again:
+
+```
+export DOCKER_BUILDKIT=0
+export COMPOSE_DOCKER_CLI_BUILD=0
+```
+
+Please see this [stack overflow post](https://stackoverflow.com/questions/64221861/an-error-failed-to-solve-with-frontend-dockerfile-v0) for explanation.
+
+Important: Docker builds may run out of memory, please increase
+Docker's default memory setting, which is 2.0 GB, via Docker Desktop -> Preferences -> Resources -> Advanced.
+
+To learn more about contributing to these images, please review the Glow [contributing guide](https://glow.readthedocs.io/en/latest/contributing.html#add-libraries-to-the-glow-docker-environment)
+
+### Glow Docker layer architecture
+
+The foundation layers are specific to setting the environment up in Databricks.
+Ganglia is an optional layer for monitoring cluster metrics such as CPU load.
+
+![Docker layer architecture](../static/glow_genomics_docker_image_architecture.png?raw=true "Glow Docker layer architecture")
+
+The open source version of this architecture to run outside of Databricks is simpler, 
+with a base layer that pulls from data mechanics' Spark Image, followed by the ```genomics``` and ```genomics-with-glow``` layers.
 
 ### Build the docker images as follows:
 
-#### Base images for Glow & Hail
+run ```docker/databricks/build.sh``` or ```docker/open-source-glow/build.sh``` to build all of the layers. 
+
+To build any layer individually, change directory into the layer and run: 
+
+```docker build <layer> -t <docker_repository>/<layer>:<tag>```
+
+to publish a layer, please push it to your docker repository:
+
+```docker push <docker_repository>/<layer>:<tag>```
+
+For example, to build and push the first foundational layer run,
 
 ##### ProjetGlow minimal 
 ```cd dbr/dbr9.1```
+
 ```docker build minimal/ -t projectglow/minimal:9.1```
 
-##### ProjectGlow python 
-```cd dbr/dbr9.1```
-```docker build python/ -t projectglow/python:9.1```
-
-##### ProjectGlow dbfsfuse 
-```cd dbr/dbr9.1```
-```docker build dbfsfuse/ -t projectglow/dbfsfuse:9.1```
-
-##### ProjectGlow standard 
-```cd dbr/dbr9.1```
-```docker build python/ -t projectglow/standard:9.1```
-
-##### ProjectGlow r 
-```cd dbr/dbr9.1```
-```docker build r/ -t projectglow/with-r:9.1```
-
-##### ProjectGlow genomics base 
-```cd dbr/dbr9.1```
-```docker build genomics/ -t projectglow/genomics:9.1```
-
-##### Glow (requires Spark 3.1 / DBR 9.x)
-```cd dbr/dbr9.1```
-```docker build genomics-with-glow/ -t projectglow/databricks-glow-minus-ganglia:<dbr_version>```
-
-##### Glow-with-Ganglia
-```cd dbr/dbr9.1```
-```docker build ganglia/ -t projectglow/databricks-glow:<dbr_version>```
-
-#### Hail image (requires Spark 3.1 / DBR 9.x) 
-```cd dbr/dbr9.1```
-```docker build genomics-with-hail/ -t projectglow/databricks-hail:<hail_version>```
+```docker push projectglow/minimal:9.1```
 
 #### Directory structure
 ```
@@ -98,7 +111,7 @@ docker
                 └── Dockerfile
 ```
 
-#### DCS FAQ for this Docker project
+#### Databricks Container Services (DCS) FAQ for this Docker project
 
 ##### Python dependencies
 
@@ -127,7 +140,6 @@ Write Databricks cluster init scripts to ```/databricks/scripts/```. When multip
 Review the Dockerfile and configurations in the ```ganglia``` directory to see how to deploy ganglia in a way that enables metrics collection on Databricks clusters using Container Services. 
 
 NOTE: ganglia is *not* officially supported on Databricks Container Services by Databricks. The ```ganglia``` docker image here is supported by the community on a *best efforts* basis, only. 
-
 
 
 
